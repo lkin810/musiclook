@@ -1,0 +1,1053 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>音乐视界 | MusicLook</title>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Noto+Sans+SC:wght@300;400;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+    <style>
+        :root {
+            --bg: #030308;
+            --fg: #e8e6e3;
+            --muted: #6b7280;
+            --accent: #f59e0b;
+            --card: rgba(255,255,255,0.04);
+            --border: rgba(255,255,255,0.08);
+            --glow: rgba(245, 158, 11, 0.4);
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: var(--bg);
+            color: var(--fg);
+            font-family: 'Noto Sans SC', sans-serif;
+            overflow: hidden;
+            height: 100vh;
+            width: 100vw;
+            user-select: none;
+        }
+        canvas {
+            position: fixed;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            z-index: 1;
+        }
+        /* 拖拽提示层 */
+        #dragZone {
+            position: fixed; inset: 0; z-index: 100;
+            background: rgba(16, 185, 129, 0.15);
+            backdrop-filter: blur(8px);
+            border: 4px dashed rgba(16, 185, 129, 0.5);
+            display: flex; align-items: center; justify-content: center;
+            font-size: 2.5rem; color: #10b981; font-weight: 700;
+            opacity: 0; pointer-events: none; transition: opacity 0.3s;
+        }
+        #dragZone.active { opacity: 1; }
+
+        /* 启动覆盖层 */
+        .overlay {
+            position: fixed; inset: 0; z-index: 10;
+            display: flex; flex-direction: column;
+            align-items: center; justify-content: center;
+            background: radial-gradient(circle at center, rgba(3,3,8,0.85) 0%, rgba(1,1,4,1) 100%);
+            backdrop-filter: blur(16px);
+            transition: opacity 0.6s cubic-bezier(0.4, 0, 0.2, 1), visibility 0.6s;
+        }
+        .overlay.hidden { opacity: 0; visibility: hidden; pointer-events: none; transform: scale(1.05); }
+
+        .logo {
+            font-family: 'Orbitron', monospace;
+            font-size: clamp(2.5rem, 6vw, 4.5rem);
+            font-weight: 900;
+            letter-spacing: 0.15em;
+            background: linear-gradient(135deg, #f59e0b, #e11d48, #10b981, #06b6d4, #8b5cf6);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 0.2rem;
+            text-shadow: 0 10px 30px var(--glow);
+        }
+        .tagline { font-size: 1rem; color: var(--muted); margin-bottom: 3rem; letter-spacing: 0.2em; text-transform: uppercase; }
+
+        .methods { display: flex; gap: 1.5rem; flex-wrap: wrap; justify-content: center; margin-bottom: 2.5rem; }
+        .method-card {
+            display: flex; flex-direction: column; align-items: center; gap: 1rem;
+            padding: 2rem 2.5rem;
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 20px;
+            cursor: pointer;
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            min-width: 220px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+        }
+        .method-card:hover {
+            background: rgba(255,255,255,0.08);
+            border-color: var(--accent);
+            transform: translateY(-5px);
+            box-shadow: 0 15px 40px rgba(245,158,11,0.2);
+        }
+        .method-card i { font-size: 2.5rem; color: var(--accent); transition: transform 0.3s; }
+        .method-card:hover i { transform: scale(1.1); }
+        .method-card .label { font-size: 1.1rem; font-weight: 700; letter-spacing: 0.05em; }
+        .method-card .desc { font-size: 0.8rem; color: var(--muted); text-align: center; line-height: 1.6; }
+
+        .sys-hint { font-size: 0.8rem; color: var(--muted); max-width: 600px; text-align: center; line-height: 1.8; background: rgba(0,0,0,0.3); padding: 1rem 1.5rem; border-radius: 12px; }
+        .sys-hint strong { color: var(--accent); }
+
+        #audioFile { display: none; }
+
+        /* 底部控制栏 */
+        .bar {
+            position: fixed; bottom: 0; left: 0; right: 0; z-index: 20;
+            padding: 1rem 2.5rem 1.5rem;
+            display: flex; align-items: center; justify-content: center; gap: 1.5rem;
+            background: linear-gradient(transparent, rgba(2,2,6,0.95) 80%);
+            opacity: 0; transform: translateY(20px); pointer-events: none;
+            transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .bar.show { opacity: 1; transform: translateY(0); pointer-events: all; }
+
+        .cbtn {
+            width: 48px; height: 48px; border-radius: 50%;
+            border: 1px solid var(--border);
+            background: var(--card); color: var(--fg);
+            cursor: pointer; display: flex; align-items: center; justify-content: center;
+            font-size: 1.2rem; transition: all 0.3s;
+            backdrop-filter: blur(12px); box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+            position: relative;
+        }
+        .cbtn:hover { background: var(--accent); border-color: var(--accent); color: #000; transform: scale(1.05); }
+        .cbtn .badge {
+            position: absolute; bottom: -4px; right: -4px;
+            font-size: 0.5rem; background: var(--accent); color: #000;
+            border-radius: 8px; padding: 1px 5px; font-weight: 700;
+            pointer-events: none;
+        }
+
+        /* 主题切换面板 */
+        .theme-panel {
+            position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%);
+            z-index: 30;
+            background: rgba(3,3,8,0.85);
+            backdrop-filter: blur(20px);
+            border: 1px solid var(--border);
+            border-radius: 20px;
+            padding: 1.5rem;
+            display: flex; gap: 1rem; flex-wrap: wrap; justify-content: center;
+            max-width: min(700px, 90vw);
+            opacity: 0; visibility: hidden; pointer-events: none;
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            transform: translateX(-50%) translateY(20px);
+            box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+        }
+        .theme-panel.show {
+            opacity: 1; visibility: visible; pointer-events: all;
+            transform: translateX(-50%) translateY(0);
+        }
+        .theme-card {
+            width: 90px; padding: 0.75rem 0.5rem;
+            background: var(--card);
+            border: 2px solid transparent;
+            border-radius: 14px;
+            cursor: pointer;
+            text-align: center;
+            transition: all 0.3s;
+        }
+        .theme-card:hover { background: rgba(255,255,255,0.08); }
+        .theme-card.active { border-color: var(--accent); box-shadow: 0 0 20px var(--glow); }
+        .theme-card .swatch {
+            width: 100%; height: 8px; border-radius: 4px;
+            margin-bottom: 6px;
+        }
+        .theme-card .tname {
+            font-size: 0.7rem; color: var(--muted);
+            letter-spacing: 0.05em;
+        }
+        .theme-card.active .tname { color: #fff; }
+
+        /* 快捷键提示 */
+        .kbd-hint {
+            position: fixed; bottom: 80px; right: 20px; z-index: 30;
+            font-size: 0.65rem; color: var(--muted);
+            background: rgba(0,0,0,0.5);
+            padding: 0.4rem 0.8rem; border-radius: 8px;
+            opacity: 0; transition: opacity 0.5s;
+            pointer-events: none;
+            backdrop-filter: blur(8px);
+            text-align: right; line-height: 1.8;
+        }
+        .kbd-hint.show { opacity: 0.6; }
+        .kbd-hint kbd {
+            display: inline-block; padding: 0 6px;
+            background: rgba(255,255,255,0.1); border-radius: 4px;
+            font-family: 'Orbitron', monospace; font-size: 0.6rem;
+        }
+
+        .track-label {
+            font-size: 0.9rem; color: #fff; max-width: 400px; overflow: hidden;
+            text-overflow: ellipsis; white-space: nowrap;
+            font-family: 'Orbitron', monospace; letter-spacing: 0.08em;
+            background: rgba(255,255,255,0.05); padding: 0.5rem 1.5rem; border-radius: 20px;
+        }
+    </style>
+</head>
+<body>
+
+<canvas id="bg-stars"></canvas> <!-- 新增：静态星空层 -->
+<canvas id="c"></canvas>
+
+<div id="dragZone"><i class="fas fa-cloud-upload-alt" style="margin-right: 15px;"></i> 松开以上传音频</div>
+
+<div class="overlay" id="ov">
+    <div class="logo">MusicLook</div>
+    <div class="tagline">音频频谱可视化引擎</div>
+    <div class="methods">
+        <div class="method-card" id="mFile">
+            <i class="fas fa-compact-disc"></i>
+            <span class="label">加载本地音频</span>
+            <span class="desc">点击或直接拖拽文件至窗口<br>支持 MP3 / WAV / FLAC</span>
+        </div>
+        <div class="method-card" id="mMic">
+            <i class="fas fa-satellite-dish"></i>
+            <span class="label">捕获系统/麦克风</span>
+            <span class="desc">实时响应外部环境声波<br>支持立体声混音</span>
+        </div>
+    </div>
+    <div class="sys-hint">
+        💡 捕获 Windows 系统正在播放的声音：右键任务栏音量图标 → 声音设置 → 录制 → 启用 <strong>「立体声混音」</strong>，然后点击右侧按钮。
+    </div>
+</div>
+
+<input type="file" id="audioFile" accept="audio/*">
+
+<div class="bar" id="bar">
+    <button class="cbtn" id="bPP" title="播放 / 暂停"><i class="fas fa-play"></i></button>
+    <span class="track-label" id="tLabel">AWAITING SIGNAL...</span>
+    <button class="cbtn" id="bSunMoon" title="日/夜模式"><i class="fas fa-moon"></i></button>
+    <button class="cbtn" id="bTheme" title="主题切换 (T)"><i class="fas fa-palette"></i></button>
+    <button class="cbtn" id="bMode" title="可视化模式 (M)"><i class="fas fa-chart-bar"></i><span class="badge" id="modeBadge">1</span></button>
+    <button class="cbtn" id="bFS" title="全屏 (F)"><i class="fas fa-expand"></i></button>
+    <button class="cbtn" id="bBack" title="返回控制台"><i class="fas fa-power-off"></i></button>
+</div>
+
+<!-- 主题选择面板 -->
+<div class="theme-panel" id="themePanel"></div>
+
+<!-- 模式选择面板 -->
+<div class="theme-panel" id="modePanel"></div>
+
+<!-- 快捷键提示 -->
+<div class="kbd-hint" id="kbdHint">
+    <kbd>Space</kbd> 播放/暂停 &nbsp; <kbd>F</kbd> 全屏<br>
+    <kbd>T</kbd> 主题 &nbsp; <kbd>M</kbd> 模式 &nbsp; <kbd>L</kbd> 日/夜 &nbsp; <kbd>Esc</kbd> 返回
+</div>
+
+<script>
+/* =========================================================
+   核心系统初始化
+   ========================================================= */
+const cvs = document.getElementById('c');
+const cx = cvs.getContext('2d', { alpha: true, desynchronized: true });
+const bgCvs = document.getElementById('bg-stars');
+const bgCx = bgCvs.getContext('2d', { alpha: false }); // 优化：关闭 alpha 提升性能
+const ov = document.getElementById('ov');
+const bar = document.getElementById('bar');
+const fileIn = document.getElementById('audioFile');
+const tLabel = document.getElementById('tLabel');
+const dragZone = document.getElementById('dragZone');
+
+let W, H, dpr;
+let audioCtx, analyser, srcNode, freqData, bufLen;
+let audioEl = null;
+let playing = false, micMode = false, micStream = null;
+let currentTrackName = '';
+let timeData = null; // 用于波形模式
+
+// 音阶定义 (C2 - B5)
+const NOTE_NAMES = ['C','D','E','F','G','A','B'];
+const SEMI = { C:0, D:2, E:4, F:5, G:7, A:9, B:11 };
+const NOTES = [];
+for (let o = 2; o <= 5; o++) {
+    for (let i = 0; i < 7; i++) {
+        NOTES.push({ 
+            name: NOTE_NAMES[i] + o, 
+            freq: 440 * Math.pow(2, (SEMI[NOTE_NAMES[i]] + (o - 4) * 12) / 12), 
+            oct: o 
+        });
+    }
+}
+const N = NOTES.length;
+const bars = NOTES.map(() => ({ h: 0, target: 0, glow: 0, vel: 0 }));
+const peaks = NOTES.map(() => ({ val: 0, vel: 0 })); // 峰值保持
+
+// =========================================================
+// 主题系统
+// =========================================================
+const THEMES = [
+    { // 0: 星云默认
+        label: '星云', labelEn: 'Nebula',
+        accent: '#f59e0b',
+        stops: [
+            { t:0.00, r:245, g:158, b:11  }, { t:0.20, r:249, g:115, b:22  },
+            { t:0.35, r:225, g:29,  b:72  }, { t:0.50, r:16,  g:185, b:129 },
+            { t:0.65, r:6,   g:182, b:212 }, { t:0.80, r:139, g:92,  b:246 },
+            { t:1.00, r:236, g:72,  b:153 }
+        ],
+        css: { bg:'#030308', fg:'#e8e6e3', muted:'#6b7280', accent:'#f59e0b', card:'rgba(255,255,255,0.04)', border:'rgba(255,255,255,0.08)' },
+        starColor: [255,255,255], starDensity: 400
+    },
+    { // 1: 极光
+        label: '极光', labelEn: 'Aurora',
+        accent: '#34d399',
+        stops: [
+            { t:0.00, r:16,  g:185, b:129 }, { t:0.25, r:52,  g:211, b:153 },
+            { t:0.40, r:6,   g:182, b:212 }, { t:0.55, r:14,  g:165, b:233 },
+            { t:0.70, r:99,  g:102, b:241 }, { t:0.85, r:139, g:92,  b:246 },
+            { t:1.00, r:167, g:139, b:250 }
+        ],
+        css: { bg:'#020617', fg:'#e2e8f0', muted:'#64748b', accent:'#34d399', card:'rgba(52,211,153,0.04)', border:'rgba(52,211,153,0.12)' },
+        starColor: [167, 243, 208], starDensity: 350
+    },
+    { // 2: 熔岩
+        label: '熔岩', labelEn: 'Lava',
+        accent: '#ef4444',
+        stops: [
+            { t:0.00, r:127, g:29,  b:29  }, { t:0.20, r:185, g:28,  b:28  },
+            { t:0.35, r:220, g:38,  b:38  }, { t:0.50, r:234, g:88,  b:12  },
+            { t:0.65, r:245, g:158, b:11  }, { t:0.80, r:250, g:204, b:21  },
+            { t:1.00, r:253, g:224, b:71  }
+        ],
+        css: { bg:'#0a0000', fg:'#fca5a5', muted:'#7f1d1d', accent:'#ef4444', card:'rgba(239,68,68,0.05)', border:'rgba(239,68,68,0.15)' },
+        starColor: [252, 165, 165], starDensity: 300
+    },
+    { // 3: 深海
+        label: '深海', labelEn: 'Ocean Deep',
+        accent: '#0ea5e9',
+        stops: [
+            { t:0.00, r:15,  g:23,  b:42  }, { t:0.25, r:30,  g:64,  b:175 },
+            { t:0.40, r:14,  g:165, b:233 }, { t:0.55, r:6,   g:182, b:212 },
+            { t:0.70, r:34,  g:211, b:183 }, { t:0.85, r:148, g:226, b:213 },
+            { t:1.00, r:204, g:251, b:241 }
+        ],
+        css: { bg:'#020617', fg:'#bae6fd', muted:'#1e40af', accent:'#0ea5e9', card:'rgba(14,165,233,0.04)', border:'rgba(14,165,233,0.12)' },
+        starColor: [186, 230, 253], starDensity: 450
+    },
+    { // 4: 赛博霓虹
+        label: '赛博', labelEn: 'Cyberpunk',
+        accent: '#ec4899',
+        stops: [
+            { t:0.00, r:236, g:72,  b:153 }, { t:0.20, r:219, g:39,  b:119 },
+            { t:0.35, r:168, g:85,  b:247 }, { t:0.50, r:59,  g:130, b:246 },
+            { t:0.65, r:6,   g:182, b:212 }, { t:0.80, r:52,  g:211, b:153 },
+            { t:1.00, r:250, g:204, b:21  }
+        ],
+        css: { bg:'#0a0015', fg:'#e9d5ff', muted:'#6b21a8', accent:'#ec4899', card:'rgba(236,72,153,0.05)', border:'rgba(236,72,153,0.15)' },
+        starColor: [233, 213, 255], starDensity: 250
+    },
+    { // 5: 幻彩琉璃
+        label: '琉璃', labelEn: 'Prism',
+        accent: '#f472b6',
+        stops: [
+            { t:0.00, r:252, g:231, b:243 }, { t:0.20, r:216, g:180, b:254 },
+            { t:0.35, r:147, g:197, b:253 }, { t:0.50, r:110, g:231, b:183 },
+            { t:0.65, r:253, g:230, b:138 }, { t:0.80, r:254, g:202, b:202 },
+            { t:1.00, r:255, g:183, b:197 }
+        ],
+        css: { bg:'#0f0710', fg:'#fce7f3', muted:'#9d174d', accent:'#f472b6', card:'rgba(244,114,182,0.04)', border:'rgba(244,114,182,0.10)' },
+        starColor: [252, 231, 243], starDensity: 300
+    },
+    { // 6: 暗夜森林
+        label: '森林', labelEn: 'Forest',
+        accent: '#22c55e',
+        stops: [
+            { t:0.00, r:20,  g:83,  b:45  }, { t:0.25, r:21,  g:128, b:61  },
+            { t:0.40, r:34,  g:197, b:94  }, { t:0.55, r:74,  g:222, b:128 },
+            { t:0.70, r:163, g:230, b:53  }, { t:0.85, r:234, g:179, b:8   },
+            { t:1.00, r:253, g:224, b:71  }
+        ],
+        css: { bg:'#04100b', fg:'#bbf7d0', muted:'#166534', accent:'#22c55e', card:'rgba(34,197,94,0.04)', border:'rgba(34,197,94,0.12)' },
+        starColor: [187, 247, 208], starDensity: 350
+    },
+    { // 7: 复古波
+        label: '复古波', labelEn: 'Retro Wave',
+        accent: '#d946ef',
+        stops: [
+            { t:0.00, r:192, g:38,  b:211 }, { t:0.20, r:219, g:39,  b:119 },
+            { t:0.35, r:244, g:63,  b:94  }, { t:0.50, r:251, g:146, b:60  },
+            { t:0.65, r:250, g:204, b:21  }, { t:0.80, r:232, g:121, b:249 },
+            { t:1.00, r:147, g:51,  b:234 }
+        ],
+        css: { bg:'#10041c', fg:'#f3e8ff', muted:'#6b21a8', accent:'#d946ef', card:'rgba(217,70,239,0.04)', border:'rgba(217,70,239,0.12)' },
+        starColor: [243, 232, 255], starDensity: 280
+    },
+    { // 8: 极简
+        label: '极简', labelEn: 'Minimal',
+        accent: '#4CAF50',
+        stops: [
+            { t:0.00, r:76,  g:175, b:80  }, { t:0.50, r:33,  g:150, b:243 },
+            { t:1.00, r:76,  g:175, b:80  }
+        ],
+        css: { bg:'#f0f0f0', fg:'#333333', muted:'#999999', accent:'#4CAF50', card:'rgba(255,255,255,0.8)', border:'rgba(0,0,0,0.1)' },
+        starColor: [200, 200, 200], starDensity: 0
+    }
+];
+
+let currentTheme = 0;
+let lightMode = false; // 太阳/月亮切换
+let visualMode = 0;
+const MODE_NAMES = ['频谱', '环形', '波形'];
+const MODE_ICONS = ['fa-chart-bar', 'fa-circle', 'fa-wave-square'];
+const MODE_COLORS = ['#f59e0b','#06b6d4','#8b5cf6'];
+
+// 重算颜色
+function recomputeColors(stops) {
+    for (let i = 0; i < N; i++) {
+        const t = i / (N - 1);
+        let idx = 0;
+        while (idx < stops.length - 2 && t > stops[idx + 1].t) idx++;
+        const a = stops[idx], b = stops[idx + 1];
+        const u = (t - a.t) / (b.t - a.t);
+        NOTE_COLORS[i] = {
+            r: Math.round(a.r + (b.r - a.r) * u),
+            g: Math.round(a.g + (b.g - a.g) * u),
+            b: Math.round(a.b + (b.b - a.b) * u)
+        };
+    }
+}
+
+// 应用主题
+function applyTheme(idx) {
+    const th = THEMES[idx];
+    currentTheme = idx;
+    const r = document.documentElement;
+    const css = th.css;
+    // 白天/黑夜只切换表面颜色(bg/fg/muted/card/border)，不改主题配色
+    r.style.setProperty('--bg', lightMode ? '#ffffff' : css.bg);
+    r.style.setProperty('--fg', lightMode ? '#222222' : css.fg);
+    r.style.setProperty('--muted', lightMode ? '#aaaaaa' : css.muted);
+    r.style.setProperty('--accent', css.accent); // 始终用主题色
+    r.style.setProperty('--card', lightMode ? 'rgba(0,0,0,0.04)' : css.card);
+    r.style.setProperty('--border', lightMode ? 'rgba(0,0,0,0.1)' : css.border);
+    r.style.setProperty('--glow', `${css.accent}66`);
+    document.body.style.background = lightMode ? '#ffffff' : css.bg;
+    recomputeColors(th.stops); // 始终用主题的频谱配色
+    if (typeof drawStaticStars === 'function') drawStaticStars();
+    document.querySelectorAll('.theme-card').forEach((el, i) => {
+        el.classList.toggle('active', i === idx);
+    });
+    updateTrackLabel();
+}
+
+// 切换日/夜模式
+function toggleLightMode() {
+    lightMode = !lightMode;
+    applyTheme(currentTheme, lightMode);
+    const icon = document.querySelector('#bSunMoon i');
+    icon.className = lightMode ? 'fas fa-sun' : 'fas fa-moon';
+}
+
+// 渲染主题面板
+function renderThemePanel() {
+    const panel = document.getElementById('themePanel');
+    panel.innerHTML = THEMES.map((th, i) => {
+        const stops = th.stops;
+        const grad = `linear-gradient(90deg, ${stops.map(s => `rgb(${s.r},${s.g},${s.b})`).join(', ')})`;
+        return `<div class="theme-card${i === currentTheme ? ' active' : ''}" data-idx="${i}">
+            <div class="swatch" style="background:${grad}"></div>
+            <div class="tname">${th.label}</div>
+        </div>`;
+    }).join('');
+    panel.querySelectorAll('.theme-card').forEach(el => {
+        el.addEventListener('click', () => applyTheme(parseInt(el.dataset.idx)));
+    });
+}
+
+// 渲染模式面板
+function renderModePanel() {
+    const panel = document.getElementById('modePanel');
+    panel.innerHTML = MODE_NAMES.map((name, i) => {
+        const active = i === visualMode ? ' active' : '';
+        return `<div class="theme-card${active}" data-idx="${i}">
+            <div class="swatch" style="background:${MODE_COLORS[i]}"></div>
+            <div class="tname"><i class="fas ${MODE_ICONS[i]}"></i> ${name}</div>
+        </div>`;
+    }).join('');
+    panel.querySelectorAll('.theme-card').forEach(el => {
+        el.addEventListener('click', () => switchMode(parseInt(el.dataset.idx)));
+    });
+}
+
+// 更新标签
+function updateTrackLabel() {
+    const th = THEMES[currentTheme];
+    const modeName = MODE_NAMES[visualMode];
+    if (playing) {
+        const base = currentTrackName || 'AWAITING SIGNAL...';
+        tLabel.textContent = `${base} · ${th.label} · ${modeName}`;
+    } else {
+        tLabel.textContent = 'AWAITING SIGNAL...';
+    }
+}
+
+// 切换可视化模式
+function switchMode(idx) {
+    visualMode = idx;
+    document.querySelector('#modeBadge').textContent = idx + 1;
+    document.querySelector('#bMode i').className = 'fas ' + MODE_ICONS[idx];
+    bursts.length = 0; trails.length = 0; orbits.length = 0;
+    document.getElementById('modePanel').classList.remove('show');
+    updateTrackLabel();
+}
+
+// 颜色由 THEMES[currentTheme].stops 提供，在 applyTheme 中初始化 NOTE_COLORS
+let NOTE_COLORS = []; // 由 applyTheme 初始化
+
+/* =========================================================
+   粒子系统架构优化
+   ========================================================= */
+const bursts = [], trails = [], orbits = [], ambients = [];
+
+function createParticle(arr, max, props) {
+    if (arr.length < max) arr.push(props);
+}
+
+function initAmbients() {
+    ambients.length = 0;
+    for (let i = 0; i < 150; i++) {
+        ambients.push({
+            x: Math.random() * W, y: Math.random() * H,
+            vx: (Math.random() - 0.5) * 0.2, vy: (Math.random() - 0.5) * 0.2,
+            size: Math.random() * 1.5 + 0.5, life: Math.random(),
+            ni: Math.floor(Math.random() * N)
+        });
+    }
+}
+
+/* =========================================================
+   自适应视口与静态星空渲染 (性能关键点)
+   ========================================================= */
+function drawStaticStars() {
+    const th = THEMES[currentTheme];
+    const bgColor = lightMode ? '#ffffff' : th.css.bg;
+    bgCx.fillStyle = bgColor;
+    bgCx.fillRect(0, 0, W, H);
+    // 白天模式或不支持星星的主题跳过
+    if (lightMode || th.starDensity === 0) return;
+    const sr = th.starColor[0], sg = th.starColor[1], sb = th.starColor[2];
+    for (let i = 0; i < th.starDensity; i++) {
+        const x = Math.random() * W, y = Math.random() * H;
+        const radius = Math.random() * 1.2;
+        const opacity = Math.random() * 0.8 + 0.2;
+        bgCx.beginPath();
+        bgCx.arc(x, y, radius, 0, Math.PI * 2);
+        bgCx.fillStyle = `rgba(${sr}, ${sg}, ${sb}, ${opacity})`;
+        bgCx.fill();
+    }
+}
+
+function resize() {
+    dpr = Math.min(window.devicePixelRatio || 1, 2);
+    W = window.innerWidth; H = window.innerHeight;
+    [cvs, bgCvs].forEach(c => {
+        c.width = W * dpr; c.height = H * dpr;
+        c.style.width = W + 'px'; c.style.height = H + 'px';
+    });
+    cx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    bgCx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    drawStaticStars();
+    initAmbients();
+}
+window.addEventListener('resize', resize);
+resize();
+// 初始化默认主题和模式
+applyTheme(0);
+renderThemePanel();
+renderModePanel();
+
+/* =========================================================
+   音频与交互逻辑
+   ========================================================= */
+function initAudio() {
+    if (audioCtx) return;
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    analyser = audioCtx.createAnalyser();
+    analyser.fftSize = 8192; // 高分辨率 FFT
+    analyser.smoothingTimeConstant = 0.8;
+    bufLen = analyser.frequencyBinCount;
+    freqData = new Uint8Array(bufLen);
+    timeData = new Uint8Array(bufLen);
+}
+
+function handleAudioFile(f) {
+    if (!f || !f.type.startsWith('audio/')) return;
+    initAudio();
+    stopAll();
+    audioEl = new Audio(URL.createObjectURL(f));
+    audioEl.crossOrigin = 'anonymous';
+    srcNode = audioCtx.createMediaElementSource(audioEl);
+    srcNode.connect(analyser);
+    analyser.connect(audioCtx.destination);
+    
+    // 确保 AudioContext 在用户交互后启动
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    
+    audioEl.play().then(() => {
+        playing = true; micMode = false;
+        currentTrackName = f.name.replace(/\.[^.]+$/, '').toUpperCase();
+        updateTrackLabel();
+        ov.classList.add('hidden');
+        bar.classList.add('show');
+        syncBtn();
+    }).catch(e => alert("播放失败: " + e.message));
+    
+    audioEl.addEventListener('ended', () => { playing = false; syncBtn(); });
+}
+
+// 拖拽上传支持
+window.addEventListener('dragover', e => { e.preventDefault(); dragZone.classList.add('active'); });
+window.addEventListener('dragleave', e => { e.preventDefault(); dragZone.classList.remove('active'); });
+window.addEventListener('drop', e => {
+    e.preventDefault(); dragZone.classList.remove('active');
+    handleAudioFile(e.dataTransfer.files[0]);
+});
+
+document.getElementById('mFile').addEventListener('click', () => fileIn.click());
+fileIn.addEventListener('change', e => { handleAudioFile(e.target.files[0]); fileIn.value = ''; });
+
+document.getElementById('mMic').addEventListener('click', async () => {
+    try {
+        initAudio();
+        stopAll();
+        if (audioCtx.state === 'suspended') await audioCtx.resume();
+        micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        srcNode = audioCtx.createMediaStreamSource(micStream);
+        srcNode.connect(analyser); // 麦克风不连接 destination 防止啸叫
+        playing = true; micMode = true;
+        currentTrackName = 'LIVE CAPTURE';
+        updateTrackLabel();
+        ov.classList.add('hidden'); bar.classList.add('show');
+        syncBtn();
+    } catch (e) {
+        alert('无法访问音频输入设备，请检查权限。');
+    }
+});
+
+function stopAll() {
+    if (audioEl) { audioEl.pause(); audioEl.src = ''; audioEl = null; }
+    if (micStream) { micStream.getTracks().forEach(t => t.stop()); micStream = null; }
+    if (srcNode) { srcNode.disconnect(); srcNode = null; }
+    playing = false; micMode = false;
+    currentTrackName = '';
+    bursts.length = 0; trails.length = 0; orbits.length = 0;
+    updateTrackLabel();
+}
+
+document.getElementById('bPP').addEventListener('click', () => {
+    if (micMode || !audioEl) return;
+    if (playing) audioEl.pause(); else audioEl.play();
+    playing = !playing; syncBtn();
+});
+
+document.getElementById('bBack').addEventListener('click', () => {
+    stopAll();
+    ov.classList.remove('hidden'); bar.classList.remove('show');
+});
+
+function syncBtn() {
+    document.querySelector('#bPP i').className = playing ? 'fas fa-pause' : 'fas fa-play';
+}
+
+// =========================================================
+// 主题面板、模式切换、全屏、键盘快捷键
+// =========================================================
+document.getElementById('bSunMoon').addEventListener('click', toggleLightMode);
+
+document.getElementById('bTheme').addEventListener('click', () => {
+    document.getElementById('themePanel').classList.toggle('show');
+});
+
+document.getElementById('bMode').addEventListener('click', () => {
+    document.getElementById('modePanel').classList.toggle('show');
+});
+
+document.getElementById('bFS').addEventListener('click', () => {
+    if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen().catch(() => {});
+    } else {
+        document.exitFullscreen().catch(() => {});
+    }
+});
+
+// 点击面板外关闭
+document.addEventListener('click', (e) => {
+    const tp = document.getElementById('themePanel');
+    if (tp.classList.contains('show') && !tp.contains(e.target) && e.target.id !== 'bTheme' && !e.target.closest('#bTheme')) {
+        tp.classList.remove('show');
+    }
+    const mp = document.getElementById('modePanel');
+    if (mp.classList.contains('show') && !mp.contains(e.target) && e.target.id !== 'bMode' && !e.target.closest('#bMode')) {
+        mp.classList.remove('show');
+    }
+});
+
+// 全屏变化时更新按钮图标
+document.addEventListener('fullscreenchange', () => {
+    const icon = document.querySelector('#bFS i');
+    if (icon) icon.className = document.fullscreenElement ? 'fas fa-compress' : 'fas fa-expand';
+});
+
+// 键盘快捷键
+document.addEventListener('keydown', (e) => {
+    // 忽略输入框等
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+    const key = e.key;
+    if (key === ' ' || key === 'Space') {
+        e.preventDefault();
+        if (bar.classList.contains('show')) document.getElementById('bPP').click();
+    } else if (key === 'f' || key === 'F') {
+        e.preventDefault();
+        document.getElementById('bFS').click();
+    } else if (key === 't' || key === 'T') {
+        e.preventDefault();
+        document.getElementById('bTheme').click();
+    } else if (key === 'm' || key === 'M') {
+        e.preventDefault();
+        document.getElementById('modePanel').classList.toggle('show');
+    } else if (key === 'l' || key === 'L') {
+        e.preventDefault();
+        document.getElementById('bSunMoon').click();
+    } else if (key === 'Escape') {
+        if (document.getElementById('themePanel').classList.contains('show')) document.getElementById('themePanel').classList.remove('show');
+        else if (document.getElementById('modePanel').classList.contains('show')) document.getElementById('modePanel').classList.remove('show');
+        else if (bar.classList.contains('show')) document.getElementById('bBack').click();
+    }
+});
+
+// 显示快捷键提示（3秒后淡出）
+setTimeout(() => {
+    document.getElementById('kbdHint').classList.add('show');
+    setTimeout(() => document.getElementById('kbdHint').classList.remove('show'), 4000);
+}, 2000);
+
+function noteEnergy(ni) {
+    if (!analyser || !freqData) return 0;
+    const f = NOTES[ni].freq;
+    const bw = audioCtx.sampleRate / analyser.fftSize;
+    const idx = Math.round(f / bw);
+    // 增加频带宽度采样以获得更稳定的结果
+    let sum = 0, count = 0;
+    for(let i = -2; i <= 2; i++) {
+        if(idx + i > 0 && idx + i < bufLen) { sum += freqData[idx + i]; count++; }
+    }
+    return (sum / count) / 255;
+}
+
+/* =========================================================
+   高性能渲染循环
+   ========================================================= */
+const margin = Math.min(100, W * 0.1);
+const time = { value: 0 };
+const GRAVITY = 0.15;
+const FRICTION = 0.96;
+
+function frame() {
+    requestAnimationFrame(frame);
+    time.value += 0.016;
+
+    if (analyser && playing) {
+        analyser.getByteFrequencyData(freqData);
+        if (visualMode === 2) analyser.getByteTimeDomainData(timeData);
+    }
+
+    // 清空前景，背景星空由底下的离屏 Canvas 负责
+    cx.clearRect(0, 0, W, H);
+
+    const baseY = H * 0.75;
+    const spacing = (W - margin * 2) / Math.max(1, (N - 1));
+    const barW = Math.max(4, spacing * 0.4);
+
+    // 计算全局能量 (用于视觉脉冲)
+    let globalEnergy = 0;
+    if (playing) {
+        for(let i=0; i<N; i++) globalEnergy += noteEnergy(i);
+        globalEnergy /= N;
+    }
+
+    // 更新柱体物理
+    for (let i = 0; i < N; i++) {
+        const e = playing ? noteEnergy(i) : 0;
+        bars[i].target = e * H * 0.55;
+        // 弹簧物理模拟
+        const force = (bars[i].target - bars[i].h) * 0.2;
+        bars[i].vel = (bars[i].vel + force) * 0.8; 
+        bars[i].h = Math.max(0, bars[i].h + bars[i].vel);
+        bars[i].glow += (e - bars[i].glow) * 0.15;
+        // 峰值保持
+        peaks[i].val = Math.max(bars[i].h, peaks[i].val - 1.5);
+    }
+
+    /* --- 1. 绘制环境氛围粒子 --- */
+    cx.globalCompositeOperation = 'screen';
+    for (let k = 0; k < ambients.length; k++) {
+        const p = ambients[k];
+        p.y -= 0.5 + p.size * 0.2 + globalEnergy * 2;
+        p.x += Math.sin(time.value + p.y * 0.01) * 0.5;
+        if (p.y < 0) { p.y = H; p.x = Math.random() * W; }
+        
+        const c = NOTE_COLORS[p.ni];
+        const alpha = Math.max(0, Math.sin(p.life * Math.PI)) * 0.3 * (1 + globalEnergy);
+        cx.fillStyle = `rgba(${c.r},${c.g},${c.b},${alpha})`;
+        cx.beginPath(); cx.arc(p.x, p.y, p.size * (1 + globalEnergy*2), 0, Math.PI*2); cx.fill();
+        p.life = (p.life + 0.005) % 1;
+    }
+
+    /* --- 2. 生成与更新动态粒子 --- */
+    for (let i = 0; i < N; i++) {
+        const x = margin + i * spacing;
+        const e = playing ? noteEnergy(i) : 0;
+        
+        // 生成顶部飞溅 (Bursts)
+        if (e > 0.3) {
+            const num = Math.floor(e * 5);
+            for (let j = 0; j < num; j++) {
+                createParticle(bursts, 2000, {
+                    x: x, y: baseY - bars[i].h,
+                    vx: (Math.random() - 0.5) * 6 * e,
+                    vy: -Math.random() * 8 * e - 2,
+                    ni: i, life: 1, size: Math.random() * 2.5 + 1
+                });
+            }
+        }
+    }
+
+    // 更新与绘制飞溅粒子 (带重力物理)
+    for (let k = bursts.length - 1; k >= 0; k--) {
+        const p = bursts[k];
+        p.vy += GRAVITY; // 重力
+        p.vx *= FRICTION; // 空气阻力
+        p.vy *= FRICTION;
+        p.x += p.vx; p.y += p.vy;
+        p.life -= 0.015;
+        if (p.life <= 0) { bursts.splice(k, 1); continue; }
+
+        const c = NOTE_COLORS[p.ni];
+        cx.fillStyle = `rgba(${c.r},${c.g},${c.b},${p.life})`;
+        cx.beginPath(); cx.arc(p.x, p.y, p.size, 0, Math.PI*2); cx.fill();
+    }
+
+    /* --- 3. 根据模式绘制频谱核心 --- */
+    cx.globalCompositeOperation = 'source-over';
+
+    if (visualMode === 0) {
+        // ======== 频谱柱体模式 (Bars) ========
+        // 绘制连线波形
+        if (playing) {
+            cx.beginPath();
+            for (let i = 0; i < N; i++) {
+                const x = margin + i * spacing;
+                const y = baseY - bars[i].h;
+                if (i === 0) cx.moveTo(x, y);
+                else {
+                    const px = margin + (i - 1) * spacing;
+                    const py = baseY - bars[i - 1].h;
+                    cx.quadraticCurveTo(px, py, (px + x)/2, (py + y)/2);
+                }
+            }
+            cx.lineTo(margin + (N-1)*spacing, baseY - bars[N-1].h);
+            cx.lineWidth = 2;
+            cx.strokeStyle = `rgba(255,255,255,${0.3 + globalEnergy * 0.5})`;
+            cx.stroke();
+        }
+
+        for (let i = 0; i < N; i++) {
+            const x = margin + i * spacing;
+            const bh = bars[i].h;
+            const c = NOTE_COLORS[i];
+            const baseGlow = bars[i].glow;
+
+            if (bh > 2) {
+                const grad = cx.createLinearGradient(0, baseY, 0, baseY - bh);
+                grad.addColorStop(0, `rgba(${c.r},${c.g},${c.b},0.0)`);
+                grad.addColorStop(0.5, `rgba(${c.r},${c.g},${c.b},${0.3 + baseGlow*0.2})`);
+                grad.addColorStop(1, `rgba(${c.r},${c.g},${c.b},${0.8 + baseGlow*0.2})`);
+                cx.fillStyle = grad;
+                cx.beginPath();
+                cx.roundRect(x - barW/2, baseY - bh, barW, bh, [barW/2, barW/2, 0, 0]);
+                cx.fill();
+                cx.fillStyle = `rgba(255,255,255,${baseGlow * 0.8})`;
+                cx.fillRect(x - 0.5, baseY - bh + 2, 1, bh - 4);
+            }
+
+            if (baseGlow > 0.05) {
+                const radGrad = cx.createRadialGradient(x, baseY, 0, x, baseY, 10 + baseGlow * 20);
+                radGrad.addColorStop(0, `rgba(${c.r},${c.g},${c.b},${baseGlow})`);
+                radGrad.addColorStop(1, `rgba(${c.r},${c.g},${c.b},0)`);
+                cx.fillStyle = radGrad;
+                cx.beginPath(); cx.arc(x, baseY, 10 + baseGlow*20, 0, Math.PI*2); cx.fill();
+            }
+
+            cx.fillStyle = `rgba(${c.r},${c.g},${c.b},0.8)`;
+            cx.beginPath(); cx.arc(x, baseY, 2, 0, Math.PI*2); cx.fill();
+
+            cx.font = `600 ${spacing < 25 ? 9 : 12}px 'Orbitron'`;
+            cx.textAlign = 'center';
+            cx.fillStyle = baseGlow > 0.2 ? `rgb(${c.r},${c.g},${c.b})` : 'rgba(107,114,128,0.5)';
+            cx.fillText(NOTES[i].name, x, baseY + 20);
+
+            if (NOTES[i].name.startsWith('C') && i > 0) {
+                cx.fillStyle = 'rgba(255,255,255,0.1)';
+                cx.fillRect(x - spacing/2, baseY + 10, 1, 30);
+            }
+            // 峰值保持白线
+            if (peaks[i].val > 2) {
+                cx.fillStyle = `rgba(255,255,255,${0.5 + baseGlow * 0.5})`;
+                cx.fillRect(x - barW/4, baseY - peaks[i].val - 1, barW/2, 2);
+            }
+        }
+
+    } else if (visualMode === 1) {
+        // ======== 环形模式 (Ring Band) ========
+        const cx2 = W / 2, cy2 = H * 0.45;
+        const maxR = Math.min(W, H) * 0.35;
+        const angleStep = (Math.PI * 2) / N;
+        const baseR = maxR * 0.45;  // 内环半径
+        const barScale = maxR * 0.45; // 柱子最大延伸
+
+        // 收集所有外端点坐标
+        const outerPoints = [];
+        for (let i = 0; i < N; i++) {
+            const angle = angleStep * i - Math.PI / 2;
+            const r = baseR + bars[i].h * 0.6;
+            outerPoints.push({
+                x: cx2 + Math.cos(angle) * r,
+                y: cy2 + Math.sin(angle) * r,
+                angle: angle, r: Math.min(r, baseR + barScale)
+            });
+        }
+
+        // 绘制环带填充 (连接所有柱体外端形成连续环)
+        cx.beginPath();
+        for (let i = 0; i <= N; i++) {
+            const p = outerPoints[i % N];
+            if (i === 0) cx.moveTo(p.x, p.y);
+            else {
+                const pp = outerPoints[(i - 1) % N];
+                cx.quadraticCurveTo(pp.x, pp.y, (pp.x + p.x) / 2, (pp.y + p.y) / 2);
+            }
+        }
+        cx.closePath();
+
+        // 环带渐变填充 (从外到内)
+        const bandGrad = cx.createRadialGradient(cx2, cy2, baseR * 0.5, cx2, cy2, baseR + barScale);
+        bandGrad.addColorStop(0, 'rgba(255,255,255,0)');  // 中心透明
+        bandGrad.addColorStop(0.6, `rgba(255,255,255,${0.02 + globalEnergy * 0.06})`);
+        bandGrad.addColorStop(1, `rgba(255,255,255,${0.08 + globalEnergy * 0.12})`);
+        cx.fillStyle = bandGrad;
+        cx.fill();
+
+        // 绘制外环连线 (平滑曲线连接柱顶)
+        cx.beginPath();
+        for (let i = 0; i <= N; i++) {
+            const p = outerPoints[i % N];
+            if (i === 0) cx.moveTo(p.x, p.y);
+            else {
+                const pp = outerPoints[(i - 1) % N];
+                cx.quadraticCurveTo(pp.x, pp.y, (pp.x + p.x) / 2, (pp.y + p.y) / 2);
+            }
+        }
+        cx.closePath();
+        cx.lineWidth = 2 + globalEnergy * 2;
+        cx.strokeStyle = `rgba(255,255,255,${0.2 + globalEnergy * 0.3})`;
+        cx.stroke();
+
+        // 绘制每个柱体 (从内环延伸到外环)
+        for (let i = 0; i < N; i++) {
+            const p = outerPoints[i];
+            const angle = p.angle;
+            const c = NOTE_COLORS[i];
+            const e = bars[i].glow;
+            const ix = cx2 + Math.cos(angle) * baseR;
+            const iy = cy2 + Math.sin(angle) * baseR;
+
+            // 柱子线条
+            if (bars[i].h > 2) {
+                cx.beginPath();
+                cx.moveTo(ix, iy);
+                cx.lineTo(p.x, p.y);
+                cx.lineWidth = Math.max(2, (maxR / N) * 1.2);
+                cx.lineCap = 'round';
+                cx.strokeStyle = `rgba(${c.r},${c.g},${c.b},${0.3 + e * 0.5})`;
+                cx.stroke();
+            }
+
+            // 外端点辉光
+            if (e > 0.08) {
+                const grd = cx.createRadialGradient(p.x, p.y, 0, p.x, p.y, 4 + e * 8);
+                grd.addColorStop(0, `rgba(${c.r},${c.g},${c.b},${0.5 + e * 0.5})`);
+                grd.addColorStop(1, `rgba(${c.r},${c.g},${c.b},0)`);
+                cx.fillStyle = grd;
+                cx.beginPath(); cx.arc(p.x, p.y, 4 + e * 8, 0, Math.PI * 2); cx.fill();
+            }
+        }
+
+        // 内环细线 (干净简洁，不要中心球)
+        cx.beginPath();
+        cx.arc(cx2, cy2, baseR, 0, Math.PI * 2);
+        cx.lineWidth = 0.5;
+        cx.strokeStyle = `rgba(255,255,255,${0.06 + globalEnergy * 0.06})`;
+        cx.stroke();
+
+    } else if (visualMode === 2) {
+        // ======== 波形模式 (Waveform) ========
+        const wMidY = H * 0.5;
+        const wStep = W / Math.min(bufLen, 1024);
+        const len = Math.min(bufLen, Math.floor(W / 2));
+
+        if (playing && timeData) {
+            // 波形填充
+            cx.beginPath();
+            for (let i = 0; i < len; i++) {
+                const x = i * wStep;
+                // timeData: 0-255, 128=center
+                const y = wMidY + ((timeData[i] - 128) / 128) * (H * 0.35);
+                if (i === 0) cx.moveTo(x, y);
+                else {
+                    const px = (i - 1) * wStep;
+                    const py = wMidY + ((timeData[i - 1] - 128) / 128) * (H * 0.35);
+                    cx.quadraticCurveTo(px, py, (px + x) / 2, (py + y) / 2);
+                }
+            }
+            // 波形线
+            cx.strokeStyle = `rgba(255,255,255,${0.6 + globalEnergy * 0.4})`;
+            cx.lineWidth = 2;
+            cx.stroke();
+
+            // 波形填充 (半透明)
+            cx.lineTo((len - 1) * wStep, wMidY);
+            cx.lineTo(0, wMidY);
+            cx.closePath();
+            const wGrad = cx.createLinearGradient(0, wMidY - H * 0.35, 0, wMidY + H * 0.35);
+            const ac = THEMES[currentTheme].accent;
+            const ah = ac.replace('#','');
+            wGrad.addColorStop(0, `rgba(${parseInt(ah.substring(0,2),16)},${parseInt(ah.substring(2,4),16)},${parseInt(ah.substring(4,6),16)},0)`);
+            wGrad.addColorStop(0.5, `rgba(${parseInt(ah.substring(0,2),16)},${parseInt(ah.substring(2,4),16)},${parseInt(ah.substring(4,6),16)},${0.1 + globalEnergy * 0.2})`);
+            wGrad.addColorStop(1, `rgba(${parseInt(ah.substring(0,2),16)},${parseInt(ah.substring(2,4),16)},${parseInt(ah.substring(4,6),16)},0)`);
+            cx.fillStyle = wGrad;
+            cx.fill();
+
+            // 中心基准线
+            cx.fillStyle = `rgba(255,255,255,${0.05 + globalEnergy * 0.1})`;
+            cx.fillRect(0, wMidY - 0.5, W, 1);
+        } else {
+            // 无音频时显示静态基准线
+            cx.fillStyle = 'rgba(255,255,255,0.05)';
+            cx.fillRect(0, wMidY - 0.5, W, 1);
+        }
+
+    }
+}
+
+frame();
+</script>
+</body>
+</html>
