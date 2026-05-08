@@ -129,4 +129,4 @@ musiclook/
 
 ## 📄 License
 
-MIT
+Unlicense
